@@ -209,14 +209,20 @@ async fn progress_exit_tx(
 					);
 					// Evict our dead CPFP immediately.
 					// Unlike others we don't have to wait for the grace period
-					if let Some(onchain) = ctx.wallet.inner.onchain.as_ref() {
-						if let Err(e) = onchain.write().await.evict_tx(*child_txid).await {
-							warn!("Failed to evict replaced CPFP {}: {:#}", child_txid, e);
+					if ctx.broadcast {
+						if let Some(onchain) = ctx.wallet.inner.onchain.as_ref() {
+							if let Err(e) = onchain.write().await.evict_tx(*child_txid).await {
+								warn!("Failed to evict replaced CPFP {}: {:#}", child_txid, e);
+							}
 						}
 					}
 					ctx.get_exit_tx_status(exit).await
 				},
 				Some(ref c) if c.status == TxStatus::NotFound => {
+					if !ctx.broadcast {
+						// Keep the stored child until an active caller can retry it.
+						return Ok(exit.status.clone());
+					}
 					debug!("Exit CPFP tx {} fell out of mempool, rebroadcasting", child_txid);
 					let package = ctx.tx_manager.get_package(exit.txid)?;
 					let guard = package.read().await;

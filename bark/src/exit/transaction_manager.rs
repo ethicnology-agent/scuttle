@@ -161,7 +161,12 @@ impl ExitTransactionManager {
 
 	pub async fn sync(&mut self) -> anyhow::Result<(), ExitError> {
 		trace!("Syncing exit transaction manager");
-		self.update_tx_statuses().await
+		self.update_tx_statuses(true).await
+	}
+
+	pub(crate) async fn sync_without_broadcast(&mut self) -> anyhow::Result<(), ExitError> {
+		trace!("Syncing exit transaction manager without broadcasting");
+		self.update_tx_statuses(false).await
 	}
 
 	/// Refreshes the chain status of a single exit transaction and returns it.
@@ -172,7 +177,7 @@ impl ExitTransactionManager {
 		self.tx_status(txid).await
 	}
 
-	async fn update_tx_statuses(&mut self) -> anyhow::Result<(), ExitError> {
+	async fn update_tx_statuses(&mut self, broadcast_local: bool) -> anyhow::Result<(), ExitError> {
 		let tip = self.tip().await?;
 		let keys = self.status.keys().cloned().collect::<Vec<_>>();
 		for txid in keys {
@@ -190,7 +195,7 @@ impl ExitTransactionManager {
 			// reports a tx as mempool while bitcoind's mempool has already evicted or
 			// confirmed it). Log and move on — the next sync tick will retry. Each exit's
 			// own `progress()` call surfaces fatal problems via its per-VTXO error field.
-			if let Err(e) = self.update_one_tx_status(txid, tip, true).await {
+			if let Err(e) = self.update_one_tx_status(txid, tip, broadcast_local).await {
 				warn!("Failed to update status for exit tx {}: {:#}", txid, e);
 			}
 		}

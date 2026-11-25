@@ -324,7 +324,7 @@ impl ExitInner {
 	}
 
 	/// Initializes pending exits and refreshes the chain view of their transaction packages.
-	async fn refresh_tx_state(&mut self) -> anyhow::Result<()> {
+	async fn refresh_tx_state(&mut self, broadcast: bool) -> anyhow::Result<()> {
 		let mut exit_vtxos = std::mem::take(&mut self.exit_vtxos);
 		for exit in &mut exit_vtxos {
 			if !exit.is_initialized() {
@@ -337,7 +337,11 @@ impl ExitInner {
 			}
 		}
 		self.exit_vtxos = exit_vtxos;
-		self.tx_manager.sync().await?;
+		if broadcast {
+			self.tx_manager.sync().await?;
+		} else {
+			self.tx_manager.sync_without_broadcast().await?;
+		}
 		Ok(())
 	}
 
@@ -756,8 +760,27 @@ impl Exit {
 		&self,
 		wallet: &Wallet,
 	) -> anyhow::Result<Option<Vec<ExitProgressStatus>>> {
+		self.progress_exits_inner(wallet, true).await
+	}
+
+	/// Refreshes and progresses exits without broadcasting or rebroadcasting transactions.
+	///
+	/// This updates persisted exit state and movement bookkeeping. It does not create CPFPs.
+	/// Call [Exit::progress_exits] to permit retries of missing local transactions.
+	pub async fn progress_exits_without_broadcast(
+		&self,
+		wallet: &Wallet,
+	) -> anyhow::Result<Option<Vec<ExitProgressStatus>>> {
+		self.progress_exits_inner(wallet, false).await
+	}
+
+	async fn progress_exits_inner(
+		&self,
+		wallet: &Wallet,
+		broadcast: bool,
+	) -> anyhow::Result<Option<Vec<ExitProgressStatus>>> {
 		let mut guard = self.inner.write().await;
-		guard.refresh_tx_state().await?;
+		guard.refresh_tx_state(broadcast).await?;
 		let mut exit_vtxos = std::mem::take(&mut guard.exit_vtxos);
 		let mut exit_statuses = Vec::with_capacity(exit_vtxos.len());
 
@@ -769,10 +792,11 @@ impl Exit {
 
 			info!("Progressing exit for VTXO {}", ev.id());
 			let pre_state = ev.state().clone();
-			let error = match ev.progress(
+			let error = match ev.progress_with_broadcast(
 				wallet,
 				&mut guard.tx_manager,
 				true,
+				broadcast,
 			).await {
 				Ok(_) => None,
 				Err(e) => {
@@ -852,7 +876,7 @@ impl Exit {
 		wallet: &Wallet,
 	) -> anyhow::Result<()> {
 		let mut guard = self.inner.write().await;
-		guard.refresh_tx_state().await?;
+		guard.refresh_tx_state(true).await?;
 		let mut exit_vtxos = std::mem::take(&mut guard.exit_vtxos);
 		for exit in &mut exit_vtxos {
 			if !exit.is_initialized() {

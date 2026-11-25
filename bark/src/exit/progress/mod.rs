@@ -84,6 +84,7 @@ pub(crate) struct ProgressContext<'a> {
 	pub exit_txids: &'a Vec<Txid>,
 	pub wallet: &'a Wallet,
 	pub tx_manager: &'a mut ExitTransactionManager,
+	pub broadcast: bool,
 }
 
 impl<'a> ProgressContext<'a> {

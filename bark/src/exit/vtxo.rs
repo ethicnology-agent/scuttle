@@ -156,6 +156,16 @@ impl ExitVtxo {
 		tx_manager: &mut ExitTransactionManager,
 		continue_until_finished: bool,
 	) -> anyhow::Result<(), ExitError> {
+		self.progress_with_broadcast(wallet, tx_manager, continue_until_finished, true).await
+	}
+
+	pub(crate) async fn progress_with_broadcast(
+		&mut self,
+		wallet: &Wallet,
+		tx_manager: &mut ExitTransactionManager,
+		continue_until_finished: bool,
+		broadcast: bool,
+	) -> anyhow::Result<(), ExitError> {
 		if self.txids.is_none() {
 			return Err(ExitError::InternalError {
 				error: String::from("Unilateral exit not yet initialized"),
@@ -170,6 +180,7 @@ impl ExitVtxo {
 				exit_txids: self.txids.as_ref().unwrap(),
 				wallet,
 				tx_manager,
+				broadcast,
 			};
 			// Attempt to move to the next state, which may or may not generate a new state
 			if log::log_enabled!(log::Level::Trace) {
